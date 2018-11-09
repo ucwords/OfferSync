@@ -38,14 +38,7 @@ class Test extends Command
      */
     public function handle()
     {
-        /*$url = "https://lh3.googleusercontent.com/5dJ_ddJoqarmfu5XUOevh91Vsyx6_mUEQOBL8MiJXsgrs7CFLCzRJWXkeO87LRBbUuM=s180-rw";
-        $im = new \imagick( $url );
-        $im->setImageFormat("jpg");
-        $im->writeImage('/tmp/thumb.png');
-        $im->clear();
-        $im->destroy();*/
-        /*Cache::forget('country');
-        dd('ok');*/
+    
         $data = Cache::store('file')->get('country');
         dd($data);
         $coutry_json_data = self::countryGet();
@@ -78,8 +71,7 @@ class Test extends Command
 
     public static function AuthorizationCode()
     {
-        return base64_encode("leanmobi:4fe58acad35742f082b0f891f0f664a2");
-        //09471fce28254a80908143258b72f9f5
+        return base64_encode("XXX:XXX");
     }
 
 }
