@@ -14,8 +14,7 @@ class OffersLook
 {
     public static function AuthorizationCode()
     {
-        //return base64_encode("leanmobiapi:b997396dd7514f81ab8216a22daebaae");
-        return base64_encode("leanmobi:8f3c3029ed374a18983f2cac8b6cfb91");
+        return base64_encode("xxxxx:xxxxxxx");
     }
 
     public static function geoFmt($data)
