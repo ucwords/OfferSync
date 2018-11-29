@@ -64,7 +64,7 @@ class GetCreativeStorage
                 $info['screenshot'][] = $d->getAttr('src');
             }
             return $info;
-        }catch(Exception $e){
+        }catch(\Exception $e){
             return json_encode(['error'=>'抓取过程中出错']);
         }
 
