@@ -8,6 +8,10 @@
 
 **php artisan offer:sync [广告源标记]**
 
+## 自动更新调用方式
+
+**php artisan auto:sync [广告源标记]**
+
 ## 接入说明
 
 **根目录/config/advertiser/example.php**
