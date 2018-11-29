@@ -2,33 +2,62 @@
 namespace App\AdvSourceStorage;
 
 use App\Models\OffersLook;
-use App\Jobs\toInsertLocal;
-use App\Models\HandleOffer;
-use DB;
-use function Symfony\Component\VarDumper\Tests\Fixtures\bar;
+use App\Models\LocalOffer\Offer;
 
 class offersLookStorage
 {
-    public static function save($conversion_result, $creative)
+    public static function save($conversion_result, $creative, $carrier)
     {
-        if (isset($conversion_result['offer']['carrier']) && !empty($conversion_result['offer']['carrier'])) {
+        /*********************自动与offerslook同步开始************************/
+       if (in_array($conversion_result['offer']['advertiser_id'], [359, 530])) { //需要自动更新定的广告主
+           $offer_id = self::saveOffer($conversion_result['offer']);
+           $offer_info = Offer::where('id', $offer_id)
+               ->select('offer_id', 'alive_status', 'offerslook_status', 'push_status', 'original_offer_id')->first();
 
-            $carrier_arr = $conversion_result['offer']['carrier'];
-            unset($conversion_result['offer']['carrier']);
-        }
-        $carrier_arr = [];
+           if ($offer_info['alive_status'] == 1 && $offer_info['push_status'] == 0) { //new offer
 
+               $bool = self::runJob($conversion_result, $creative, $carrier);
+               if ($bool) {
+                   Offer::where('id', $offer_id)->update(['offerslook_status' => 1, 'offer_id' => $bool, 'push_status' => 1, 'post_ol_time' => date('Y-m-d H;i:s', time())]);
+               }
+
+               var_dump(date('Y-m-d H:i:s', time()).' 新增offer :' .$bool);
+
+           } elseif($offer_info['alive_status'] == 1 && $offer_info['push_status'] == 1 && $offer_info['offerslook_status'] == 0) {  // 重启OL上offer
+               $result = OffersLook::toChangOffersLookStatus($offer_info['offer_id'], 'active');
+               $result_arr = anyToArray($result);
+               if (isset($result_arr['code']) && $result_arr['code'] == 0) { //更新成功
+                   Offer::where('id', $offer_id)->update(['offerslook_status' => 1]);
+               }
+
+               var_dump(date('Y-m-d H:i:s', time()).' 重启offer :' .$offer_info['offer_id']);
+
+           } elseif ($offer_info['alive_status'] == 0 && $offer_info['push_status'] == 1 && $offer_info['offerslook_status'] == 1) { //停掉OL上offer
+               $result = OffersLook::toChangOffersLookStatus($offer_info['offer_id'], 'paused');
+               $result_arr = anyToArray($result);
+               if (isset($result_arr['code']) && $result_arr['code'] == 0) { //更新成功
+                   Offer::where('id', $offer_id)->update(['offerslook_status' => 0]);
+               }
+               var_dump(date('Y-m-d H:i:s', time()).' 停掉offer :' .$offer_info['offer_id']);
+           } else {
+               $result = OffersLook::offerPut($offer_info['offer_id'], json_encode($conversion_result));
+               $result_arr = anyToArray($result);
+
+               if (isset($result_arr[ 'code' ]) && $result_arr[ 'code' ] == 0) {
+                   var_dump('to update offer: '.$offer_info['offer_id']);
+               }
+           }
+           /*********************自动与offerslook同步结束************************/
+       } else { //不需要自动更新的广告主走着里
+           self::runJob($conversion_result, $creative, $carrier);
+       }
+
+    }
+
+    public static function runJob($conversion_result, $creative, $carrier)
+    {
         $exist = OffersLook::offerExist($conversion_result, $conversion_result[ 'offer' ][ 'advertiser_id' ]);
         $exist_arr = anyToArray($exist);
-        if (in_array($conversion_result[ 'offer' ][ 'advertiser_id' ], [174])) {
-            //更新本地，存在激活。不存在则die.
-            $offer_arr = [
-                'name' => $conversion_result['offer']['name'],
-                'advertiser_id'  => $conversion_result[ 'offer' ][ 'advertiser_id' ],
-                'advertiser_offer_id'  => $conversion_result[ 'offer' ][ 'advertiser_offer_id' ],
-            ];
-            self::saveOffer($offer_arr);
-        }
 
         fmtOut("OffersLook::offerExist Complete!" . $conversion_result[ 'offer' ][ 'name' ] . " Res:" . json_encode($exist_arr));
         if (isset($exist_arr[ 'code' ]) && $exist_arr[ 'code' ] == 0) {
@@ -40,18 +69,16 @@ class offersLookStorage
                     $offer_id = $offerslook_result[ 'data' ][ 'offer' ][ 'id' ];
                     fmtOut("Sync offerslook offer_id:${offer_id}");
 
-                    if (in_array($conversion_result[ 'offer' ][ 'advertiser_id' ], [359, 113, 298, 495, 484])) {
-                        foreach ($carrier_arr as $item) {
-                            $tag = json_encode(['name' => trim($item)]);
-                            $carrier_result = OffersLook::createCarrier($offer_id, $tag); //兼容CPA类型运营商模块 创建Carrier
+                    if (isset($carrier) && !empty($carrier)) { //兼容CPA类型运营商模块 创建Carrier
+                        foreach ($carrier as $item) {
+                            $carrier_result = OffersLook::createCarrier($offer_id, json_encode(['name' => trim($item)]));
                             $carrier_result_arr = anyToArray($carrier_result);
-                            //dd($carrier_result_arr);
-                            fmtOut("Create carrier " .$item,  $carrier_result_arr['message'] . "for offer_id:${offer_id}");
+                            if (isset($carrier_result['code']) && $carrier_result['code'] == 0) {
+                                fmtOut("Create a new carrier: ${item} for offer_id: ${offer_id} create Success!");
+                            } else {
+                                fmtOut("Create a new carrier: ${item} for offer_id: ${offer_id} create Error! result: ". json_encode($carrier_result_arr));
+                            }
                         }
-
-                    }
-                    if (in_array($conversion_result[ 'offer' ][ 'advertiser_id' ], [174])) {
-                        self::insertOfferId($offerslook_result);
                     }
 
                     if (isset($creative[ 'thumbfile' ])) {
@@ -63,7 +90,6 @@ class offersLookStorage
                             } else {
                                 fmtOut('Sync offerslook offer_id:'.json_encode($uploadThumbnail_result).'offer_thumbnail create Error!');
                             }
-
                         }
                     }
 
@@ -88,29 +114,36 @@ class offersLookStorage
                             }
                         }
                     }
+
+                    return $offer_id;
                 } else {
                     fmtOut("OffersLook::offerPost :" . json_encode($result));
+
+                    return false;
                 }
             } else {
                 $exist_offer_id = $exist_arr[ 'data' ][ 'rowset' ][ 0 ][ 'offer' ][ 'id' ];
-                if (in_array($conversion_result[ 'offer' ][ 'advertiser_id' ], [359, 113,298, 495, 484])) {
-                    if ($carrier_arr) {
-                        foreach ($carrier_arr as $item) {
-                            $tag = json_encode(['name' => trim($item)]);
-                            $carrier_result = OffersLook::createCarrier($exist_offer_id, $tag); //兼容CPA类型运营商模块 创建Carrier
-                            $carrier_result_arr = anyToArray($carrier_result);
-                            //dd($carrier_result_arr);
-                            fmtOut("Create carrier " . $carrier_result_arr['message'] . "for offer_id:${exist_offer_id}");
-                        }
-                    }
-                }
                 if ($exist_offer_id) {
                     $result = OffersLook::offerPut($exist_offer_id, json_encode($conversion_result));
-                    //自动更新处理
-                    /*if (in_array($conversion_result[ 'offer' ][ 'advertiser_id' ], [174])) {
-                        self::insertOfferId(json_decode($result, true));
-                    }*/
+                    $result_arr = anyToArray($result);
 
+                    if (isset($result_arr[ 'code' ]) && $result_arr[ 'code' ] == 0) {
+
+                        if (isset($carrier) && !empty($carrier)) { //兼容CPA类型运营商模块 创建Carrier
+                            foreach ($carrier as $item) {
+                                $carrier_result = OffersLook::createCarrier($exist_offer_id, json_encode(['name' => trim($item)]));
+                                $carrier_result_arr = anyToArray($carrier_result);
+                                if (isset($carrier_result['code']) && $carrier_result['code'] == 0) {
+                                    fmtOut("Create a new carrier: ${item} for offer_id: ${exist_offer_id} create Success!");
+                                } else {
+                                    fmtOut("Create a new carrier: ${item} for offer_id: ${exist_offer_id} create Error! result: ". json_encode($carrier_result_arr));
+                                }
+                            }
+                        }
+
+                        return $exist_offer_id;
+                    }
+                    return false;
                 }
                 fmtOut("OffersLook::offerExist num :" . $exist_arr[ 'data' ][ 'totalRows' ] . " ${exist_offer_id} " . $conversion_result[ 'offer' ][ 'name' ]);
             }
@@ -119,50 +152,38 @@ class offersLookStorage
 
 
     /**
-     * sync offer id
-     * @param $offer_data
+     * @author Dyson
+     * @description 新单子则添加到本地、默认alive_status = 1、offerslook_status和push_status = 0；
+     * @param $data
+     * @return bool
+     * @time 2018/11/21 15:14
      */
-    public static function insertOfferId($offer_data)
+    public static function saveOffer($data)
     {
-        $offer_id = $offer_data[ 'data' ][ 'offer' ][ 'id' ];
-        $advertiser_id = $offer_data[ 'data' ][ 'offer' ][ 'advertiser_id' ];
-        $advertiser_offer_id = $offer_data[ 'data' ][ 'offer' ][ 'advertiser_offer_id' ];
-        #更新本地
-        DB::table('handle_offer')->where('advertiser_id', $advertiser_id)->where('advertiser_offer_id', $advertiser_offer_id)->update([
-                'offerslook_id' => $offer_id,
-                'offerslook_status' => 1,
-                'alive_status'  => 1,
-                'update_time'   => date('Y-m-d H:i:s'),
+        $offer_model = Offer::updateOrCreate([
+            'advertiser_id' => $data[ 'advertiser_id' ],
+            'original_offer_id' => $data[ 'advertiser_offer_id' ],
+            'user_id' => 0,
+        ],[
+            'alive_status'=> 1,
+            'title'=> $data[ 'name' ],
+            'advertiser_id' => $data[ 'advertiser_id' ],
+            'original_offer_name' => $data[ 'name' ],
+            'original_offer_id' => $data[ 'advertiser_offer_id' ],
+            'preview_url' => $data[ 'preview_url' ],
+            'tracking_url' => $data[ 'destination_url' ],
+            'description' => $data[ 'description' ],
+            'revenue' => $data[ 'revenue' ],
+            'revenue_type' => $data[ 'revenue_type' ],
+            'payout' => $data[ 'payout' ],
+            'payout_type' => $data[ 'payout_type' ],
+            'currency' => empty($data[ 'currency' ]) ? 'USD' : $data[ 'currency' ],
+            'start_time' => time(),
+            'status' => $data[ 'status' ],
         ]);
 
-    }
-
-    /**
-     * 保存自动同步offer
-     * @param $offer
-     */
-    public static function saveOffer($offer)
-    {   
-        $exists = DB::table('handle_offer')->where('advertiser_id', $offer['advertiser_id'])->where('advertiser_offer_id', $offer['advertiser_offer_id'])->first();
-        //dd($exists);
-        if ($exists) {
-            DB::table('handle_offer')->where('advertiser_id', $offer['advertiser_id'])->where('advertiser_offer_id', $offer['advertiser_offer_id'])->update([
-                'name' => $offer['name'],
-                'advertiser_id' => $offer['advertiser_id'],
-                'advertiser_offer_id' => $offer['advertiser_offer_id'],
-                'alive_status' => 1,
-                'create_time' => date('Y-m-d H:i:s'),
-            ]);
-        }  else {
-            DB::table('handle_offer')->insert([
-                'name' => $offer['name'],
-                'advertiser_id' => $offer['advertiser_id'],
-                'advertiser_offer_id' => $offer['advertiser_offer_id'],
-                'alive_status' => 1,
-                'create_time' => date('Y-m-d H:i:s'),   
-            ]);
+        if ($offer_model) {
+            return $offer_model->id;
         }
     }
-
-
 }
