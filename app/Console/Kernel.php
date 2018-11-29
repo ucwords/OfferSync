@@ -5,6 +5,8 @@ namespace App\Console;
 use App\Console\Commands\OfferSync;
 use App\Console\Commands\zhang;
 use App\Console\Commands\Test;
+use App\Console\Commands\AutoSync;
+
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use Illuminate\Filesystem\Filesystem;
@@ -21,6 +23,7 @@ class Kernel extends ConsoleKernel
         OfferSync::class,
         Test::class,
         zhang::class,
+        AutoSync::class
     ];
 
     /**
@@ -37,15 +40,9 @@ class Kernel extends ConsoleKernel
             $file->cleanDirectory('storage/app');
         })->daily();
 
-        //用户测试
-        /*$schedule->call(function () {
-            DB::table('test')->insert(['content' => '7878']);
-        })->everyMinute();*/
 
-        //$schedule->command('offer:sync inplayable')->cron('*/5 * * * * *')->runInBackground()->sendOutputTo(storage_path('logs/inplayable.log'))->withoutOverlapping();
-        $schedule->command('offer:sync inplayable')->everyFiveMinutes()->runInBackground()->sendOutputTo(storage_path('logs/inplayable.log'))->withoutOverlapping();
-        //$schedule->command('offer:sync pai')->hourly()->runInBackground()->sendOutputTo(storage_path('logs/pai.log'))->withoutOverlapping();
-        //$schedule->command('offer:sync avatarmobi')->everyThirtyMinutes()->runInBackground()->sendOutputTo(storage_path('logs/avatarmobi.log'))->withoutOverlapping();
+        $schedule->command('auto:sync bothads')->cron('*/15 * * * * *')->runInBackground()->sendOutputTo(storage_path('logs/bothads.log'))->withoutOverlapping();
+        $schedule->command('auto:sync mobimelon')->cron('*/15 * * * * *')->runInBackground()->sendOutputTo(storage_path('logs/mobimelon.log'))->withoutOverlapping();
     }
 
     /**
