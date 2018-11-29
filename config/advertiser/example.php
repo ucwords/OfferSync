@@ -219,5 +219,9 @@ return [
         }
 
         return $creative;
+    },
+    'carrier' => function ($item){
+        $carrier_arr = isset($item['carrier']) ? $item['carrier'] : null ;
+        return $carrier_arr;
     }
 ];
